@@ -1,0 +1,19 @@
+__pycache__
+.venv/
+*.pyc
+*.pyo
+*.pyd
+
+# local IDE/cache
+.cursor/
+.vscode/
+
+# finetune_demo: generated & downloaded files
+finetune_demo/output
+finetune_demo/data
+finetune_demo/formatted_data
+ToolAlpaca/
+AdvertiseGen/
+*.gz
+*.idea
+.DS_Store
