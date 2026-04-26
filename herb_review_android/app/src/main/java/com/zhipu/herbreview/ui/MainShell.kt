@@ -116,6 +116,10 @@ fun MainShell(
                 onLogout = onLogout,
                 appearanceMode = appearanceMode,
                 onCycleAppearanceMode = onCycleAppearanceMode,
+                onOpenHistorySession = { sid ->
+                    resumeSessionId = sid
+                    tabIndex = MainTab.Review.ordinal
+                },
             )
         }
     }

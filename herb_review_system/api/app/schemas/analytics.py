@@ -22,6 +22,17 @@ class DirectorWorkRow(ConfigModel):
     error_reports_resolved: int | None = None
     return_count: int | None = None
     reviewing_doctor: str | None = None
+    reviewing_doctor_employee_id: str | None = None
+
+
+class DirectorAuditLogRow(ConfigModel):
+    id: int
+    action: str
+    session_id: str
+    detail: str | None = None
+    created_at: str
+    pharmacist_name: str | None = None
+    pharmacist_employee_id: str | None = None
 
 
 class DirectorErrorTimelineRow(ConfigModel):

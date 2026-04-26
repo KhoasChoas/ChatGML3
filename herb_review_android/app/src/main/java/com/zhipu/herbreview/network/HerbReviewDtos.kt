@@ -114,6 +114,17 @@ data class DirectorWorkRowDto(
     @SerializedName("error_reports_resolved") val errorReportsResolved: Int?,
     @SerializedName("return_count") val returnCount: Int?,
     @SerializedName("reviewing_doctor") val reviewingDoctor: String?,
+    @SerializedName("reviewing_doctor_employee_id") val reviewingDoctorEmployeeId: String?,
+)
+
+data class DirectorAuditLogDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("action") val action: String,
+    @SerializedName("session_id") val sessionId: String,
+    @SerializedName("detail") val detail: String?,
+    @SerializedName("created_at") val createdAt: String,
+    @SerializedName("pharmacist_name") val pharmacistName: String?,
+    @SerializedName("pharmacist_employee_id") val pharmacistEmployeeId: String?,
 )
 
 data class DirectorErrorTimelineDto(

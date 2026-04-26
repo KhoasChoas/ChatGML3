@@ -23,6 +23,7 @@ data class DirectorWorkOverviewRow(
     val errorReportsResolved: Int = 0,
     val returnCount: Int = 0,
     val reviewingDoctor: String? = null,
+    val reviewingDoctorEmployeeId: String? = null,
 )
 
 data class DirectorErrorTimelineRow(
@@ -55,6 +56,17 @@ data class DirectorSessionStepRow(
     val reviewerName: String?,
     val reviewComment: String?,
     val hasErrorReport: Boolean,
+)
+
+/** 复核会话关键操作审计（review_audit_logs） */
+data class DirectorAuditLogRow(
+    val id: Int,
+    val action: String,
+    val sessionId: String,
+    val detail: String?,
+    val createdAt: String,
+    val pharmacistName: String?,
+    val pharmacistEmployeeId: String?,
 )
 
 object DirectorAnalyticsDemoData {

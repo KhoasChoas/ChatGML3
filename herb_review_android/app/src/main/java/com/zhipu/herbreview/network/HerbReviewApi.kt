@@ -71,6 +71,13 @@ interface HerbReviewApi {
         @Query("offset") offset: Int,
     ): List<DirectorErrorTimelineDto>
 
+    @GET("analytics/director/audit-logs")
+    suspend fun directorAuditLogs(
+        @Query("session_id") sessionId: String?,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): List<DirectorAuditLogDto>
+
     @GET("error-reports")
     suspend fun listErrorReports(
         @Query("limit") limit: Int,

@@ -179,13 +179,25 @@ fun ReviewHomeScreen(
             remoteRx = rx.toPresetDemo()
             remoteSessionId = s.id
             remoteFlow = s.toFlowSteps()
-            stepSession = IntegrationOutcome.Ok("已加载历史会话 ${s.id.take(8)}…")
+            val flowList = remoteFlow ?: emptyList()
+            val isRecheckSession = s.notes.orEmpty().contains("parent_session_id=")
+            stepSession = IntegrationOutcome.Ok(
+                buildString {
+                    append("已加载历史会话 ${s.id.take(8)}…")
+                    if (isRecheckSession) append("（返工：从顺序拍照继续）")
+                },
+            )
             stepFinalize = when (s.status) {
                 "completed" -> IntegrationOutcome.Ok("历史会话状态=completed")
                 else -> IntegrationOutcome.Waiting
             }
-            capturedCount = (remoteFlow ?: emptyList()).count { it.matchStatus != "pending" }
-            phase = 3
+            if (isRecheckSession) {
+                capturedCount = flowList.count { it.matchStatus == "correct" }
+                phase = 2
+            } else {
+                capturedCount = flowList.count { it.matchStatus != "pending" }
+                phase = 3
+            }
         } catch (e: Exception) {
             stepSession = IntegrationOutcome.Fail("加载历史会话失败：${e.message ?: e}")
         } finally {

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import text
 
 from app.deps import DbSession
-from app.schemas.analytics import DirectorErrorTimelineRow, DirectorWorkRow
+from app.schemas.analytics import DirectorAuditLogRow, DirectorErrorTimelineRow, DirectorWorkRow
 
 router = APIRouter()
 
@@ -64,7 +64,16 @@ def director_work_overview(
                     WHERE al.session_id = rs.id
                       AND al.action IN ('review_returned', 'error_inbox_auto_return')
                 ) AS return_count,
-                pr.reviewing_doctor AS reviewing_doctor
+                pr.reviewing_doctor AS reviewing_doctor,
+                (
+                    SELECT p.employee_id
+                    FROM review_audit_logs al
+                    JOIN pharmacists p ON p.id = al.pharmacist_id
+                    WHERE al.session_id = rs.id
+                      AND al.action IN ('review_completed', 'error_inbox_auto_pass')
+                    ORDER BY al.created_at DESC, al.id DESC
+                    LIMIT 1
+                ) AS reviewing_doctor_employee_id
             FROM review_sessions rs
             JOIN prescriptions pr ON pr.id = rs.prescription_id
             JOIN pharmacists creator ON creator.id = rs.created_by_pharmacist_id
@@ -93,3 +102,50 @@ def director_error_timeline(
     )
     rows = [DirectorErrorTimelineRow.model_validate(dict(r._mapping)) for r in result]
     return rows
+
+
+@router.get("/director/audit-logs", response_model=list[DirectorAuditLogRow])
+def director_audit_logs(
+    db: DbSession,
+    session_id: str | None = Query(default=None, description="仅查看指定复核会话的审计记录；不传则返回全局最近记录"),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[DirectorAuditLogRow]:
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS review_audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                pharmacist_id INTEGER NOT NULL,
+                detail TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+    )
+    sid = (session_id or "").strip()
+    base_sql = """
+        SELECT
+            al.id AS id,
+            al.action AS action,
+            al.session_id AS session_id,
+            al.detail AS detail,
+            al.created_at AS created_at,
+            p.full_name AS pharmacist_name,
+            p.employee_id AS pharmacist_employee_id
+        FROM review_audit_logs al
+        JOIN pharmacists p ON p.id = al.pharmacist_id
+    """
+    if sid:
+        result = db.execute(
+            text(base_sql + " WHERE al.session_id = :sid ORDER BY al.created_at DESC, al.id DESC LIMIT :lim OFFSET :off"),
+            {"sid": sid, "lim": limit, "off": offset},
+        )
+    else:
+        result = db.execute(
+            text(base_sql + " ORDER BY al.created_at DESC, al.id DESC LIMIT :lim OFFSET :off"),
+            {"lim": limit, "off": offset},
+        )
+    return [DirectorAuditLogRow.model_validate(dict(r._mapping)) for r in result]

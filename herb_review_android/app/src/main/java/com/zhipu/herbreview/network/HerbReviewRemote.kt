@@ -3,6 +3,7 @@ package com.zhipu.herbreview.network
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.zhipu.herbreview.BuildConfig
+import com.zhipu.herbreview.data.DirectorAuditLogRow
 import com.zhipu.herbreview.data.DirectorErrorTimelineRow
 import com.zhipu.herbreview.data.DirectorSessionStepRow
 import com.zhipu.herbreview.data.DirectorWorkOverviewRow
@@ -179,9 +180,19 @@ object HerbReviewRemote {
         return service.directorWorkOverview(limit = 200, offset = 0)
     }
 
-    suspend fun fetchDirectorErrorTimeline(): List<DirectorErrorTimelineDto> {
+    suspend fun fetchDirectorErrorTimeline(limit: Int = 500, offset: Int = 0): List<DirectorErrorTimelineDto> {
         val service = api ?: throw IllegalStateException("API 未配置")
-        return service.directorErrorTimeline(limit = 200, offset = 0)
+        return service.directorErrorTimeline(limit = limit.coerceIn(1, 500), offset = offset.coerceAtLeast(0))
+    }
+
+    suspend fun fetchDirectorAuditLogs(sessionId: String? = null, limit: Int = 200, offset: Int = 0): List<DirectorAuditLogDto> {
+        val service = api ?: throw IllegalStateException("API 未配置")
+        val sid = sessionId?.trim()?.ifEmpty { null }
+        return service.directorAuditLogs(
+            sessionId = sid,
+            limit = limit.coerceIn(1, 500),
+            offset = offset.coerceAtLeast(0),
+        )
     }
 
     suspend fun searchPrescriptions(q: String, limit: Int = 40): PrescriptionPageDto {
@@ -282,6 +293,7 @@ fun DirectorWorkRowDto.toOverviewRow(): DirectorWorkOverviewRow =
         errorReportsResolved = errorReportsResolved ?: 0,
         returnCount = returnCount ?: 0,
         reviewingDoctor = reviewingDoctor,
+        reviewingDoctorEmployeeId = reviewingDoctorEmployeeId,
     )
 
 fun SessionStepDto.toDirectorStep(sessionId: String): DirectorSessionStepRow =
@@ -296,6 +308,17 @@ fun SessionStepDto.toDirectorStep(sessionId: String): DirectorSessionStepRow =
         reviewerName = null,
         reviewComment = reviewerComment,
         hasErrorReport = false,
+    )
+
+fun DirectorAuditLogDto.toAuditLogRow(): DirectorAuditLogRow =
+    DirectorAuditLogRow(
+        id = id,
+        action = action,
+        sessionId = sessionId,
+        detail = detail,
+        createdAt = createdAt,
+        pharmacistName = pharmacistName,
+        pharmacistEmployeeId = pharmacistEmployeeId,
     )
 
 fun DirectorErrorTimelineDto.toErrorTimelineRow(): DirectorErrorTimelineRow =

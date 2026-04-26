@@ -17,3 +17,7 @@ AdvertiseGen/
 *.gz
 *.idea
 .DS_Store
+
+# Herb review: local secrets & DB
+herb_review_system/api/.env
+herb_review_system/data/*.db

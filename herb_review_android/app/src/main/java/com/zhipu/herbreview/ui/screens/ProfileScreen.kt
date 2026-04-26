@@ -66,15 +66,26 @@ fun ProfileScreen(
     onLogout: () -> Unit,
     appearanceMode: Int = APPEARANCE_FOLLOW_SYSTEM,
     onCycleAppearanceMode: () -> Unit = {},
+    onOpenHistorySession: (String) -> Unit = {},
 ) {
     var showDirector by rememberSaveable { mutableStateOf(false) }
     var showReviewHistory by rememberSaveable { mutableStateOf(false) }
+    var showNotificationReminders by rememberSaveable { mutableStateOf(false) }
+
+    if (showNotificationReminders) {
+        NotificationRemindersScreen(
+            modifier = modifier,
+            onBack = { showNotificationReminders = false },
+        )
+        return
+    }
 
     if (showReviewHistory) {
         ReviewHistoryScreen(
             modifier = modifier,
             session = session,
             onBack = { showReviewHistory = false },
+            onOpenHistorySession = onOpenHistorySession,
         )
         return
     }
@@ -143,9 +154,9 @@ fun ProfileScreen(
         Spacer(Modifier.height(8.dp))
         ProfileNavRow(
             title = "消息与提醒",
-            subtitle = "后台约每 15 分钟轮询本人待继续会话；数量增加时系统通知",
+            subtitle = "报错台工单全部结案且会话完成或打回时提醒；可在此开关",
             icon = { Icon(Icons.Outlined.NotificationsNone, contentDescription = null) },
-            onClick = {},
+            onClick = { showNotificationReminders = true },
         )
         Spacer(Modifier.height(8.dp))
         ProfileNavRow(

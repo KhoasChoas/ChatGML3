@@ -1,0 +1,21 @@
+[
+  {
+    "report_id": "ER-12bddf36",
+    "timestamp": "2026-04-16 15:21:23",
+    "trigger": "auto_unrecognized",
+    "status": "pending",
+    "from_user_id": "guest",
+    "from_user_name": "访客",
+    "image_name": "龙胆2.jpg",
+    "note": "系统自动上报：识别置信度不足或未知药材。",
+    "model_candidates": [
+      {
+        "name": "未知药材",
+        "confidence": 0.28,
+        "evidence": "未命中预置关键词，需药剂师人工确认。"
+      }
+    ],
+    "corrected_herb": "",
+    "resolved_by": ""
+  }
+]

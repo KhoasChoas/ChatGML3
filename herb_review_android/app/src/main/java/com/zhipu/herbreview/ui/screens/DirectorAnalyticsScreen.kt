@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,18 +23,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AssignmentTurnedIn
-import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,16 +48,18 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.zhipu.herbreview.BuildConfig
 import com.zhipu.herbreview.data.DirectorAnalyticsDemoData
-import com.zhipu.herbreview.data.DirectorErrorTimelineRow
+import com.zhipu.herbreview.data.DirectorAuditLogRow
 import com.zhipu.herbreview.data.DirectorSessionStepRow
 import com.zhipu.herbreview.data.DirectorWorkOverviewRow
 import com.zhipu.herbreview.ui.theme.HerbReviewTheme
@@ -60,28 +67,49 @@ import com.zhipu.herbreview.ui.integration.IntegrationOutcome
 import com.zhipu.herbreview.ui.integration.IntegrationStatusPanel
 import com.zhipu.herbreview.ui.integration.IntegrationStepLine
 import com.zhipu.herbreview.network.HerbReviewRemote
-import com.zhipu.herbreview.network.toErrorTimelineRow
+import com.zhipu.herbreview.network.toAuditLogRow
 import com.zhipu.herbreview.network.toDirectorStep
 import com.zhipu.herbreview.network.toOverviewRow
 import kotlinx.coroutines.launch
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun DirectorAnalyticsScreen(
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
 ) {
+    var showErrorTimeline by rememberSaveable { mutableStateOf(false) }
+    if (showErrorTimeline) {
+        DirectorErrorTimelineScreen(modifier = modifier, onBack = { showErrorTimeline = false })
+        return
+    }
+
     val scope = rememberCoroutineScope()
     var expandedSessionIds by remember { mutableStateOf(setOf<String>()) }
     val apiConfigured = HerbReviewRemote.isConfigured()
     var remoteOverview by remember { mutableStateOf<List<DirectorWorkOverviewRow>?>(null) }
-    var remoteTimeline by remember { mutableStateOf<List<DirectorErrorTimelineRow>?>(null) }
     var overviewError by remember { mutableStateOf<String?>(null) }
-    var timelineError by remember { mutableStateOf<String?>(null) }
     var stepsCache by remember { mutableStateOf(mapOf<String, List<DirectorSessionStepRow>>()) }
     var stepErrors by remember { mutableStateOf(mapOf<String, String>()) }
     var loadingSessionIds by remember { mutableStateOf(setOf<String>()) }
+    var auditCache by remember { mutableStateOf(mapOf<String, List<DirectorAuditLogRow>>()) }
+    var auditErrors by remember { mutableStateOf(mapOf<String, String>()) }
+    var loadingAuditIds by remember { mutableStateOf(setOf<String>()) }
     var stepFetchOk by remember { mutableIntStateOf(0) }
     var stepFetchFail by remember { mutableIntStateOf(0) }
+    var draftPrescriptionQuery by rememberSaveable { mutableStateOf("") }
+    var draftReviewerQuery by rememberSaveable { mutableStateOf("") }
+    var draftDateFilter by rememberSaveable { mutableStateOf("7d") }
+    var appliedPrescriptionQuery by rememberSaveable { mutableStateOf("") }
+    var appliedReviewerQuery by rememberSaveable { mutableStateOf("") }
+    var appliedDateFilter by rememberSaveable { mutableStateOf("7d") }
+
+    fun applyFilters() {
+        appliedPrescriptionQuery = draftPrescriptionQuery.trim()
+        appliedReviewerQuery = draftReviewerQuery.trim()
+        appliedDateFilter = draftDateFilter
+    }
 
     var overviewFetch by remember {
         mutableStateOf<IntegrationOutcome>(
@@ -92,51 +120,50 @@ fun DirectorAnalyticsScreen(
             },
         )
     }
-    var timelineFetch by remember {
-        mutableStateOf<IntegrationOutcome>(
-            if (apiConfigured) {
-                IntegrationOutcome.Waiting
-            } else {
-                IntegrationOutcome.Ok("内置演示 ${DirectorAnalyticsDemoData.errorTimeline.size} 条")
-            },
-        )
-    }
-
     LaunchedEffect(BuildConfig.HERB_API_BASE_URL) {
         if (!apiConfigured) {
             remoteOverview = null
-            remoteTimeline = null
             overviewError = null
-            timelineError = null
             overviewFetch = IntegrationOutcome.Ok("内置演示 ${DirectorAnalyticsDemoData.workOverview.size} 条")
-            timelineFetch = IntegrationOutcome.Ok("内置演示 ${DirectorAnalyticsDemoData.errorTimeline.size} 条")
             return@LaunchedEffect
         }
         overviewFetch = IntegrationOutcome.Working
-        timelineFetch = IntegrationOutcome.Working
         try {
             HerbReviewRemote.ensureLoggedIn()
             val list = HerbReviewRemote.fetchDirectorOverview().map { it.toOverviewRow() }
-            val tl = HerbReviewRemote.fetchDirectorErrorTimeline().map { it.toErrorTimelineRow() }
             remoteOverview = list
-            remoteTimeline = tl
             overviewError = null
-            timelineError = null
             overviewFetch = IntegrationOutcome.Ok("已加载 ${list.size} 条（含登录校验）")
-            timelineFetch = IntegrationOutcome.Ok("已加载 ${tl.size} 条")
         } catch (e: Exception) {
             val msg = e.message ?: e.toString()
             overviewError = msg
-            timelineError = msg
             remoteOverview = null
-            remoteTimeline = null
             overviewFetch = IntegrationOutcome.Fail(msg)
-            timelineFetch = IntegrationOutcome.Fail(msg)
         }
     }
 
     val displayRows = remoteOverview ?: DirectorAnalyticsDemoData.workOverview
-    val displayTimeline = remoteTimeline ?: DirectorAnalyticsDemoData.errorTimeline
+    val rxQ = appliedPrescriptionQuery
+    val rvQ = appliedReviewerQuery
+    val now = LocalDateTime.now()
+    val filteredRows = displayRows.filter { row ->
+        val byRx = rxQ.isBlank() || row.prescriptionNo.contains(rxQ, ignoreCase = true)
+        val byReviewer = rvQ.isBlank() ||
+            (row.reviewingDoctor ?: "").contains(rvQ, ignoreCase = true) ||
+            (row.reviewingDoctorEmployeeId ?: "").contains(rvQ, ignoreCase = true)
+        val byDate = when (appliedDateFilter) {
+            "7d" -> row.sessionStartedAt.toLocalDateTimeOrNull()?.isAfter(now.minusDays(7)) ?: true
+            "30d" -> row.sessionStartedAt.toLocalDateTimeOrNull()?.isAfter(now.minusDays(30)) ?: true
+            else -> true
+        }
+        byRx && byReviewer && byDate
+    }
+    val totalSessions = filteredRows.size
+    val totalManualFix = filteredRows.sumOf { it.stepManualFix }
+    val totalPendingReports = filteredRows.sumOf { it.errorReportsPending }
+    val totalResolvedReports = filteredRows.sumOf { it.errorReportsResolved }
+    val totalReturns = filteredRows.sumOf { it.returnCount }
+    val passedWithReviewer = filteredRows.count { !it.reviewingDoctor.isNullOrBlank() }
 
     val detailPullOutcome = when {
         !apiConfigured -> IntegrationOutcome.NotApplicable
@@ -148,8 +175,7 @@ fun DirectorAnalyticsScreen(
 
     val directorIntegrationLines = listOf(
         IntegrationStepLine("① 汇总 GET /analytics/director/work-overview", overviewFetch),
-        IntegrationStepLine("② 展开明细 GET /review-sessions/{id}", detailPullOutcome),
-        IntegrationStepLine("③ 时间线 GET /analytics/director/error-timeline", timelineFetch),
+        IntegrationStepLine("② 展开明细 GET /review-sessions/{id} · 审计 GET /analytics/director/audit-logs", detailPullOutcome),
     )
 
     LazyColumn(
@@ -176,9 +202,19 @@ fun DirectorAnalyticsScreen(
             Spacer(Modifier.height(6.dp))
             IntegrationStatusPanel(
                 title = "数据拉取自检",
-                summary = "与复核页相同：绿色对勾＝成功；红色为接口错误说明。展开卡片时会单独请求步骤明细。",
+                summary = "与复核页相同：绿色对勾＝成功；红色为接口错误说明。展开卡片时会请求步骤明细与会话审计。报错时间线在独立页面查看。",
                 steps = directorIntegrationLines,
             )
+            Spacer(Modifier.height(8.dp))
+            FilledTonalButton(
+                onClick = { showErrorTimeline = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Icon(Icons.Outlined.Timeline, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("报错与复核时间线（统计与筛选）")
+            }
             Spacer(Modifier.height(8.dp))
         }
 
@@ -188,8 +224,108 @@ fun DirectorAnalyticsScreen(
                 subtitle = "对应视图 director_work_overview",
                 icon = { Icon(Icons.Outlined.AssignmentTurnedIn, contentDescription = null) },
             )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = draftPrescriptionQuery,
+                    onValueChange = { draftPrescriptionQuery = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    label = { Text("按处方编号筛选") },
+                    placeholder = { Text("如 365624") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { applyFilters() }),
+                )
+                OutlinedTextField(
+                    value = draftReviewerQuery,
+                    onValueChange = { draftReviewerQuery = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    label = { Text("按复核医师筛选") },
+                    placeholder = { Text("如 成惠 / 3070") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { applyFilters() }),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = draftDateFilter == "7d",
+                    onClick = { draftDateFilter = "7d" },
+                    label = { Text("近 7 天") },
+                )
+                FilterChip(
+                    selected = draftDateFilter == "30d",
+                    onClick = { draftDateFilter = "30d" },
+                    label = { Text("近 30 天") },
+                )
+                FilterChip(
+                    selected = draftDateFilter == "all",
+                    onClick = { draftDateFilter = "all" },
+                    label = { Text("全部") },
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "输入条件后点击「应用筛选」；时间范围亦需点击后生效。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = {
+                        draftPrescriptionQuery = ""
+                        draftReviewerQuery = ""
+                        draftDateFilter = "7d"
+                        appliedPrescriptionQuery = ""
+                        appliedReviewerQuery = ""
+                        appliedDateFilter = "7d"
+                    },
+                    enabled = draftPrescriptionQuery.isNotBlank() ||
+                        draftReviewerQuery.isNotBlank() ||
+                        draftDateFilter != "7d" ||
+                        appliedPrescriptionQuery.isNotBlank() ||
+                        appliedReviewerQuery.isNotBlank() ||
+                        appliedDateFilter != "7d",
+                ) { Text("清空筛选") }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { applyFilters() }) { Text("应用筛选") }
+            }
+            Spacer(Modifier.height(8.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    StatMini("会话总数", totalSessions.toString(), Modifier.weight(1f))
+                    StatMini("人工修正", totalManualFix.toString(), Modifier.weight(1f))
+                    StatMini("报错待决", totalPendingReports.toString(), Modifier.weight(1f))
+                    StatMini("报错已决", totalResolvedReports.toString(), Modifier.weight(1f))
+                    StatMini("打回次数", totalReturns.toString(), Modifier.weight(1f))
+                    StatMini("已填复核医师", passedWithReviewer.toString(), Modifier.weight(1f))
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "筛选后会话：$totalSessions 条",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        items(displayRows, key = { it.sessionId }) { row ->
+        items(filteredRows, key = { it.sessionId }) { row ->
             val expanded = expandedSessionIds.contains(row.sessionId)
             val steps = if (remoteOverview != null) {
                 stepsCache[row.sessionId] ?: emptyList()
@@ -202,6 +338,10 @@ fun DirectorAnalyticsScreen(
                 steps = steps,
                 stepsLoading = loadingSessionIds.contains(row.sessionId),
                 stepsLoadError = stepErrors[row.sessionId],
+                showAuditSection = apiConfigured && remoteOverview != null,
+                auditLogs = auditCache[row.sessionId].orEmpty(),
+                auditLoading = loadingAuditIds.contains(row.sessionId),
+                auditError = auditErrors[row.sessionId],
                 onToggle = {
                     val willExpand = !expandedSessionIds.contains(row.sessionId)
                     expandedSessionIds = expandedSessionIds.toMutableSet().apply {
@@ -228,37 +368,26 @@ fun DirectorAnalyticsScreen(
                             }
                         }
                     }
+                    if (willExpand && remoteOverview != null && !auditCache.containsKey(row.sessionId)) {
+                        scope.launch {
+                            loadingAuditIds = loadingAuditIds + row.sessionId
+                            try {
+                                HerbReviewRemote.ensureLoggedIn()
+                                val logs = HerbReviewRemote.fetchDirectorAuditLogs(sessionId = row.sessionId)
+                                    .map { it.toAuditLogRow() }
+                                auditCache = auditCache + (row.sessionId to logs)
+                                auditErrors = auditErrors - row.sessionId
+                            } catch (e: Exception) {
+                                val msg = e.message ?: e.toString()
+                                auditCache = auditCache + (row.sessionId to emptyList())
+                                auditErrors = auditErrors + (row.sessionId to msg)
+                            } finally {
+                                loadingAuditIds = loadingAuditIds - row.sessionId
+                            }
+                        }
+                    }
                 },
             )
-        }
-
-        item {
-            Spacer(Modifier.height(6.dp))
-            SectionTitle(
-                title = "报错与复核时间线",
-                subtitle = "对应视图 director_error_resolution_timeline",
-                icon = { Icon(Icons.Outlined.Timeline, contentDescription = null) },
-            )
-        }
-        if (remoteOverview != null && timelineError != null) {
-            item {
-                Text(
-                    text = "报错时间线接口拉取失败：$timelineError。已回退到内置演示。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (displayTimeline.isEmpty()) {
-            item {
-                Text(
-                    text = "暂无报错记录。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            items(displayTimeline, key = { it.errorReportId }) { row -> ErrorTimelineCard(row) }
         }
 
         item { Spacer(Modifier.height(12.dp)) }
@@ -288,6 +417,10 @@ private fun SessionOverviewCard(
     steps: List<DirectorSessionStepRow>,
     stepsLoading: Boolean,
     stepsLoadError: String?,
+    showAuditSection: Boolean,
+    auditLogs: List<DirectorAuditLogRow>,
+    auditLoading: Boolean,
+    auditError: String?,
     onToggle: () -> Unit,
 ) {
     Card(
@@ -359,7 +492,16 @@ private fun SessionOverviewCard(
                 StatMini("报错待决", row.errorReportsPending.toString(), Modifier.weight(1f))
                 StatMini("报错已决", row.errorReportsResolved.toString(), Modifier.weight(1f))
                 StatMini("打回次数", row.returnCount.toString(), Modifier.weight(1f))
-                StatMini("复核医师", row.reviewingDoctor?.ifBlank { "—" } ?: "—", Modifier.weight(1f))
+                StatMini(
+                    "复核医师",
+                    buildString {
+                        val n = row.reviewingDoctor?.ifBlank { "—" } ?: "—"
+                        val eid = row.reviewingDoctorEmployeeId?.ifBlank { "—" } ?: "—"
+                        append(n)
+                        if (eid != "—") append("($eid)")
+                    },
+                    Modifier.weight(1f),
+                )
             }
 
             AnimatedVisibility(
@@ -408,6 +550,74 @@ private fun SessionOverviewCard(
                                 )
                             }
                             StepTableRow(step)
+                        }
+                    }
+                    if (showAuditSection) {
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = "关键操作审计",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        when {
+                            auditLoading -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = "正在加载审计…",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            auditError != null -> {
+                                Text(
+                                    text = "审计加载失败：$auditError",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            auditLogs.isEmpty() -> {
+                                Text(
+                                    text = "暂无审计记录。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            else -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    auditLogs.forEach { log ->
+                                        Column {
+                                            Text(
+                                                text = buildString {
+                                                    append(log.createdAt)
+                                                    append(" · ")
+                                                    append(auditActionLabel(log.action))
+                                                    append(" · ")
+                                                    append(log.pharmacistName?.ifBlank { "—" } ?: "—")
+                                                    val eid = log.pharmacistEmployeeId?.ifBlank { null }
+                                                    if (eid != null) append("($eid)")
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                            log.detail?.takeIf { it.isNotBlank() }?.let { d ->
+                                                Text(
+                                                    text = d,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                        HorizontalDivider(
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.height(4.dp))
@@ -495,12 +705,31 @@ private fun manualReviewCell(step: DirectorSessionStepRow): String {
     }
 }
 
+private fun auditActionLabel(action: String): String = when (action) {
+    "review_completed" -> "复核完成"
+    "review_returned" -> "打回复核"
+    "review_recheck_created" -> "创建返工会话"
+    "review_suspended_by_error_report" -> "报错挂起"
+    "error_inbox_auto_return" -> "报错台自动打回"
+    "error_inbox_auto_pass" -> "报错台自动通过"
+    else -> action
+}
+
 private fun matchStatusLabel(status: String): String = when (status) {
     "correct" -> "一致"
     "incorrect" -> "不符"
     "needs_review" -> "存疑"
     "pending" -> "待识别"
     else -> status
+}
+
+private fun String?.toLocalDateTimeOrNull(): LocalDateTime? {
+    if (this.isNullOrBlank()) return null
+    return try {
+        LocalDateTime.parse(this.trim(), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+    } catch (_: Exception) {
+        null
+    }
 }
 
 @Composable
@@ -511,74 +740,11 @@ private fun StatMini(label: String, value: String, modifier: Modifier = Modifier
     }
 }
 
-@Composable
-private fun ErrorTimelineCard(row: DirectorErrorTimelineRow) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("工单 #${row.errorReportId}", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        text = "${row.prescriptionNo} · 步骤 ${row.stepIndex}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                AssistChip(
-                    onClick = {},
-                    label = { Text(reportStatusLabel(row.reportStatus)) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        labelColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "应付：${row.expectedHerbName} ｜ LLM：${row.llmRecognizedName ?: "—"}",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "上报：${row.reportedByName} · ${row.reportedAt}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            row.reviewerName?.let {
-                Text(
-                    text = "复核：$it · ${row.reviewedAt ?: "—"} · ${decisionLabel(row.decision)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            row.reviewComment?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    text = "备注：$it",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-    }
-}
-
 private fun sessionStatusLabel(status: String): String = when (status) {
     "completed" -> "已完成"
     "in_progress" -> "进行中"
     "draft" -> "草稿"
     "cancelled" -> "已取消"
-    else -> status
-}
-
-private fun reportStatusLabel(status: String): String = when (status) {
-    "open" -> "待处理"
-    "notified" -> "已通知"
-    "resolved" -> "已处理"
-    "withdrawn" -> "已撤回"
     else -> status
 }
 
