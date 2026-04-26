@@ -1,0 +1,10 @@
+# Copy to local.properties (already gitignored) to point the app at your local FastAPI.
+# Emulator: use 10.0.2.2 to reach the host machine's localhost.
+# Physical device: use your PC's LAN IP, e.g. http://192.168.1.10:8000/
+
+herbApi.baseUrl=http://10.0.2.2:8000
+herbApi.loginEmployeeId=3070
+herbApi.loginPassword=your_password_as_in_sqlite
+# 开发兜底：当登录 401 时，使用后端 DEV_ALLOW_HEADER_AUTH 对应的药师 ID
+# herbApi.devPharmacistId=1
+herbApi.presetPrescriptionNo=365624
